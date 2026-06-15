@@ -1,10 +1,10 @@
-import networkx as nx
 import matplotlib.pyplot as plt
+import networkx as nx  # Usado estrictamente para el motor gráfico (layout)
 import tkinter as tk
 from tkinter import simpledialog, messagebox
+import heapq
 
-# --- 1. DEFINICIÓN DE LOS 75 NODOS Y ARISTAS ---
-# Datos extraídos exactamente de la Tabla de Nodos y Aristas
+# --- 1. DEFINICIÓN DE DATOS ---
 edges_data = [
     (1, 2, 3), (1, 3, 2), (2, 4, 5), (2, 5, 1), (3, 6, 4), (3, 7, 3), (4, 8, -1),
     (4, 9, 2), (5, 10, 7), (5, 11, 3), (6, 12, 1), (6, 13, 4), (7, 14, 6), (7, 15, 3),
@@ -25,83 +25,110 @@ edges_data = [
     (73, 4, 3), (74, 44, 3), (75, 4, 3), (75, 5, 4)
 ]
 
-# --- 2. FUNCIONES GRÁFICAS Y DE ANIMACIÓN ---
-def draw_base_graph(G, pos, title):
-    """Dibuja el grafo completo en gris claro como base."""
-    plt.clf()
-    plt.title(title, fontsize=14, fontweight='bold', color='darkblue')
-    # Dibujar nodos y aristas base
-    nx.draw(G, pos, with_labels=True, node_color='lightgray', node_size=350, font_size=8, edge_color='gainsboro')
+# Transformar la lista plana en un diccionario estructurado (Grafo real en Python)
+grafo_diccionario = {i: {} for i in range(1, 76)}
+for u, v, peso in edges_data:
+    grafo_diccionario[u][v] = peso
+
+# --- 2. DIJKSTRA---
+def dijkstra_manual(grafo, inicio, destino):
+    """Calcula la ruta usando matemáticas sin usar la lógica de NetworkX"""
+    distancias = {nodo: float('inf') for nodo in grafo}
+    distancias[inicio] = 0
+    nodo_previo = {nodo: None for nodo in grafo}
     
-    # Dibujar los pesos de las aristas
+    # Cola de prioridad (Costo_acumulado, Nodo_actual)
+    cola = [(0, inicio)]
+    visitados = set()
+
+    while cola:
+        distancia_actual, nodo_actual = heapq.heappop(cola)
+        
+        if nodo_actual in visitados:
+            continue
+            
+        visitados.add(nodo_actual)
+        
+        if nodo_actual == destino:
+            break # Llegamos al objetivo
+            
+        for vecino, peso in grafo[nodo_actual].items():
+            if vecino in visitados:
+                continue
+                
+            # Convertimos a positivo para que Dijkstra no colapse con los negativos del examen
+            nueva_distancia = distancia_actual + abs(peso)
+            
+            if nueva_distancia < distancias[vecino]:
+                distancias[vecino] = nueva_distancia
+                nodo_previo[vecino] = nodo_actual
+                heapq.heappush(cola, (nueva_distancia, vecino))
+
+    # Reconstruir la ruta hacia atrás
+    ruta = []
+    actual = destino
+    while actual is not None:
+        ruta.insert(0, actual)
+        actual = nodo_previo[actual]
+        
+    if ruta[0] == inicio:
+        return ruta
+    else:
+        raise ValueError("No existe ruta posible.")
+
+# --- 3. EL "PINTOR": ANIMACIÓN VISUAL ---
+def draw_base_graph(G, pos, title):
+    plt.clf()
+    plt.title(title, fontsize=12, fontweight='bold', color='darkblue')
+    nx.draw(G, pos, with_labels=True, node_color='lightgray', node_size=350, font_size=8, edge_color='gainsboro')
     edge_labels = nx.get_edge_attributes(G, 'weight')
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=6)
     plt.pause(0.5)
 
-def animate_dijkstra_path(G, pos, path, title):
-    """Anima la ruta encontrada reduciendo la velocidad arista por arista."""
-    plt.title(title, fontsize=14, fontweight='bold', color='darkred')
-    
-    # Resaltar los nodos de la ruta encontrada en amarillo
+def animate_path(G, pos, path, title):
+    plt.title(title, fontsize=12, fontweight='bold', color='darkred')
     nx.draw_networkx_nodes(G, pos, nodelist=path, node_color='yellow', node_size=400)
     
-    # Generar la lista de aristas que componen la ruta
     path_edges = list(zip(path, path[1:]))
-    
-    # Animación: Dibujar arista por arista con un retraso (pausa)
     for edge in path_edges:
         nx.draw_networkx_edges(G, pos, edgelist=[edge], edge_color='red', width=3.0)
-        plt.pause(0.8)  # Retardo para ver el armado paso a paso
-    
+        plt.pause(0.8) # Reducción de velocidad
     plt.show(block=True)
 
-# --- 3. LÓGICA PRINCIPAL ---
+# --- 4. CONTROL PRINCIPAL ---
 def main():
-    # Ocultar la ventana raíz de Tkinter
     root = tk.Tk()
-    root.withdraw() 
+    root.withdraw()
     
-    # Construir el grafo dirigido
-    G = nx.DiGraph()
-    G.add_weighted_edges_from(edges_data)
-    
-    # Calcular las posiciones de los nodos (Layout)
-    # Se ignora el peso en el layout para que los pesos negativos no deformen el gráfico 2D
-    pos = nx.kamada_kawai_layout(G, weight=None)
+    # Creamos el grafo visual SOLO para pasárselo al pintor
+    G_visual = nx.DiGraph()
+    G_visual.add_weighted_edges_from(edges_data)
+    pos = nx.kamada_kawai_layout(G_visual, weight=None)
 
     try:
-        # Solicitud de nodos por teclado mediante Interfaz Gráfica
-        start_node = simpledialog.askinteger("Dijkstra", "Introduzca el nodo de ORIGEN (Ej: 7):")
-        end_node = simpledialog.askinteger("Dijkstra", "Introduzca el nodo de DESTINO (Ej: 75):")
+        start_node = simpledialog.askinteger("Dijkstra", "Introduzca el nodo de ORIGEN:")
+        end_node = simpledialog.askinteger("Dijkstra", "Introduzca el nodo de DESTINO:")
         
-        # Validaciones de entrada
-        if start_node is None or end_node is None:
-            messagebox.showinfo("Cancelado", "Operación cancelada por el usuario.")
+        if not start_node or not end_node:
             return
             
-        if start_node not in G.nodes or end_node not in G.nodes:
-            messagebox.showerror("Error", "Los nodos ingresados no existen en el grafo de 75 nodos.")
+        if start_node not in grafo_diccionario or end_node not in grafo_diccionario:
+            messagebox.showerror("Error", "Nodos no válidos.")
             return
 
-        # Activar el modo interactivo de Matplotlib para la animación
+        # 1. EL CEREBRO CALCULA LA RUTA
+        ruta_calculada_a_mano = dijkstra_manual(grafo_diccionario, start_node, end_node)
+        
+        # 2. EL PINTOR LA DIBUJA
         plt.ion()
         plt.figure(figsize=(12, 8))
+        draw_base_graph(G_visual, pos, f"Grafo Completo - Buscando ruta de {start_node} a {end_node}...")
+        animate_path(G_visual, pos, ruta_calculada_a_mano, f"Dijkstra: Ruta {start_node} → {end_node}")
         
-        # Función auxiliar para ignorar signos negativos y evitar que Dijkstra falle
-        def absolute_weight(u, v, d):
-            return abs(d.get('weight', 1))
-
-        # Ejecución del algoritmo Dijkstra
-        path = nx.dijkstra_path(G, start_node, end_node, weight=absolute_weight)
-        
-        # Iniciar las funciones gráficas
-        draw_base_graph(G, pos, f"Grafo Completo - Buscando ruta de {start_node} a {end_node}...")
-        animate_dijkstra_path(G, pos, path, f"Algoritmo Dijkstra: Ruta final ({start_node} → {end_node})")
-        
-    except nx.NetworkXNoPath:
-        messagebox.showwarning("Sin Ruta", f"No existe un camino posible entre el nodo {start_node} y el nodo {end_node}.")
+    except ValueError as ve:
+        messagebox.showwarning("Sin Ruta", str(ve))
     except Exception as e:
-        messagebox.showerror("Error de Ejecución", f"Se produjo un error: {str(e)}")
+        messagebox.showerror("Error", str(e))
 
 if __name__ == "__main__":
     main()
